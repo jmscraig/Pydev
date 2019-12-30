@@ -97,6 +97,18 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
+                "get_env = os.environ.get",
+                "import os\nimport bar\nimport foo",
+                "from ..b import *",
+                "from ..b import a",
+                "from . import a",
+                "from a import *",
+                "from a import b",
+                "from a.b import d as f",
+                "from a import b as c",
+                "import a.b as c",
+                "import a.b",
+                "import a",
                 "1 | 2 == 0",
                 "1 & 2 == 0",
                 "1 ^ 2 == 0",

@@ -31,6 +31,8 @@ import org.python.pydev.parser.jython.ast.For;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.IfExp;
+import org.python.pydev.parser.jython.ast.Import;
+import org.python.pydev.parser.jython.ast.ImportFrom;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.NameTokType;
@@ -42,6 +44,7 @@ import org.python.pydev.parser.jython.ast.Str;
 import org.python.pydev.parser.jython.ast.Suite;
 import org.python.pydev.parser.jython.ast.While;
 import org.python.pydev.parser.jython.ast.Yield;
+import org.python.pydev.parser.jython.ast.aliasType;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
@@ -56,6 +59,8 @@ import org.python.pydev.shared_core.parsing.BaseParser.ParseOutput;
 import org.python.pydev.shared_core.string.StringUtils;
 
 public class GenCythonAstImpl {
+
+    public static final NameTok FOUND_NAME_LIST = new NameTok("found_name_list", NameTok.ImportName);
 
     public static boolean IN_TESTS = false;
     private final ParserInfo parserInfo;
@@ -95,6 +100,10 @@ public class GenCythonAstImpl {
 
                         case "Name":
                             node = createName(asObject);
+                            break;
+
+                        case "StatList":
+                            node = createStatList(asObject);
                             break;
 
                         case "Bool":
@@ -259,6 +268,14 @@ public class GenCythonAstImpl {
                             node = createTypecast(asObject);
                             break;
 
+                        case "Import":
+                            node = createImport(asObject);
+                            break;
+
+                        case "FromImportStat":
+                            node = createFromImport(asObject);
+                            break;
+
                         case "Add":
                         case "Sub":
                         case "Mul":
@@ -280,6 +297,76 @@ public class GenCythonAstImpl {
                 }
             }
             return node;
+        }
+
+        private ISimpleNode createFromImport(JsonObject asObject) {
+            JsonValue moduleValue = asObject.get("module");
+            if (moduleValue != null && moduleValue.isObject()) {
+                ISimpleNode module = createNode(moduleValue.asObject());
+                if (module instanceof Import) {
+                    Import imp = (Import) module;
+                    NameTok moduleName = (NameTok) imp.names[0].name;
+                    moduleName.ctx = NameTok.ImportModule;
+                    ImportFrom importFrom = new ImportFrom(moduleName, null, 0);
+                    setLine(importFrom, asObject);
+
+                    JsonValue items = asObject.get("items");
+                    if (items.isArray()) {
+                        List<aliasType> lst = new ArrayList<>();
+                        JsonArray asArray = items.asArray();
+                        for (JsonValue v : asArray) {
+                            if (v.isArray()) {
+                                JsonArray arr2 = v.asArray();
+                                if (arr2.size() == 2) {
+                                    JsonValue v0 = arr2.get(0);
+                                    JsonValue v2 = arr2.get(1);
+                                    NameTok nameTok = new NameTok(v0.asString(), NameTok.ImportName);
+                                    setLine(nameTok, v2.asObject());
+                                    NameTok n2 = createNameTok(v2.asObject(), NameTok.ImportName);
+                                    if (n2 != null && n2.id != null && n2.id.equals(nameTok.id)) {
+                                        n2 = null;
+                                    }
+                                    if (!nameTok.id.equals("*")) {
+                                        lst.add(new aliasType(nameTok, n2));
+                                    }
+                                }
+                            }
+                        }
+                        importFrom.names = lst.toArray(new aliasType[0]);
+                    }
+
+                    JsonValue level = moduleValue.asObject().get("level");
+                    if (level != null && level.isString()) {
+                        try {
+                            importFrom.level = Integer.parseInt(level.asString());
+                        } catch (NumberFormatException e) {
+                        }
+                    }
+                    return importFrom;
+                }
+            }
+            return null;
+        }
+
+        private ISimpleNode createImport(JsonObject asObject) {
+            JsonValue jsonValue = asObject.get("module_name");
+            if (jsonValue != null && jsonValue.isObject()) {
+                List<aliasType> alias = new ArrayList<aliasType>();
+                JsonValue nameList = asObject.get("name_list");
+                NameTok foundNameList;
+                if (nameList == null || (nameList.isString() && nameList.asString().equals("None"))) {
+                    foundNameList = null;
+                } else {
+                    foundNameList = FOUND_NAME_LIST;
+
+                }
+                NameTokType name = createNameTok(jsonValue.asObject(), NameTok.ImportName);
+                alias.add(new aliasType(name, foundNameList));
+                Import imp = new Import(alias.toArray(new aliasType[0]));
+
+                return imp;
+            }
+            return null;
         }
 
         private ISimpleNode createTypecast(JsonObject asObject) {
@@ -1210,8 +1297,28 @@ public class GenCythonAstImpl {
                 ctx.setStore((SimpleNode) left);
 
                 ISimpleNode right = createNode(rhs);
-                node = astFactory.createAssign((exprType) left, (exprType) right);
-                setLine(node, asObject);
+
+                if (right instanceof Import) {
+                    // i.e.: in cython it assigns an import to a name.
+                    node = (Import) right;
+                    setLine(node, asObject);
+
+                    if (left instanceof Name) {
+                        Name leftName = (Name) left;
+                        aliasType[] names = ((Import) right).names;
+                        aliasType aliasType = names[0];
+
+                        if (aliasType.asname != null) {
+                            aliasType.asname = new NameTok(leftName.id, NameTok.ImportName);
+                            aliasType.asname.beginColumn = leftName.beginColumn;
+                            aliasType.asname.beginLine = leftName.beginLine;
+                        }
+
+                    }
+                } else {
+                    node = astFactory.createAssign((exprType) left, (exprType) right);
+                    setLine(node, asObject);
+                }
             }
             return node;
         }
@@ -1393,15 +1500,38 @@ public class GenCythonAstImpl {
             return null;
         }
 
-        private NameTokType createNameTok(JsonObject asObject, int ctx) {
+        private NameTok createNameTok(JsonObject asObject, int ctx) {
             NameTok node = null;
             JsonValue value;
             value = asObject.get("name");
             if (value != null) {
                 node = new NameTok(value.asString(), ctx);
                 setLine(node, asObject);
+            } else {
+                JsonValue nodeValue = asObject.get("__node__");
+                if (nodeValue.isString() && "IdentifierString".equals(nodeValue.asString())) {
+                    value = asObject.get("value");
+                    if (value != null) {
+                        node = new NameTok(value.asString(), ctx);
+                        setLine(node, asObject);
+                    }
+                }
             }
             return node;
+        }
+
+        private NodeList createStatList(JsonObject asObject) {
+            JsonValue stats = asObject.get("stats");
+            if (stats != null && stats.isArray()) {
+                JsonArray asArray = stats.asArray();
+                NodeList nodeList = new NodeList();
+                for (JsonValue v : asArray) {
+                    ISimpleNode n = createNode(v);
+                    nodeList.nodes.add(n);
+                }
+                return nodeList;
+            }
+            return null;
         }
 
         private Name createName(JsonObject asObject) {
@@ -1474,7 +1604,7 @@ public class GenCythonAstImpl {
         } else {
             JsonValue body = asObject.get("stats");
             if (body != null && body.isArray()) {
-                // System.out.println(body.toPrettyString());
+                //                System.out.println(body.toPrettyString());
                 JsonToNodesBuilder builder = new JsonToNodesBuilder(p);
                 JsonArray asArray = body.asArray();
                 Iterator<JsonValue> iterator = asArray.iterator();
@@ -1493,24 +1623,42 @@ public class GenCythonAstImpl {
         return null;
     }
 
+    public static class StopOnLogException extends RuntimeException {
+
+        public StopOnLogException(String s) {
+            super(s);
+        }
+
+        public StopOnLogException(Exception e) {
+            super(e);
+        }
+
+        public StopOnLogException(String s, Exception e) {
+            super(s, e);
+        }
+
+        private static final long serialVersionUID = 1L;
+
+    }
+
     private static void log(String s) {
         Log.log(s);
         if (IN_TESTS) {
-            throw new RuntimeException(s);
+            throw new StopOnLogException(s);
         }
     }
 
     private static void log(Exception e) {
         Log.log(e);
         if (IN_TESTS) {
-            throw new RuntimeException(e);
+            throw new StopOnLogException(e);
         }
     }
 
     private static void log(String s, Exception e) {
         Log.log(s, e);
         if (IN_TESTS) {
-            throw new RuntimeException(s, e);
+            throw new StopOnLogException(s, e);
         }
     }
 
@@ -1527,6 +1675,8 @@ public class GenCythonAstImpl {
                     CompletionProposalFactory.get().getCythonShellId());
             String contents = parserInfo.document.get();
             return serverShell.convertToJsonAst(StringUtils.replaceNewLines(contents, "\n"));
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
