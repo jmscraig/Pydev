@@ -227,6 +227,8 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     }
 
     public void testGenCythonAstCornerCase2() throws Exception {
+        compareCase("intptr_t(ptr)", "<intptr_t>ptr");
+
         compareCase("a = None", "a = NULL");
 
         compareCase("class E:\n  z = 0\n", "cdef enum E:\n  z\n");

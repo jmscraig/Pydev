@@ -255,6 +255,10 @@ public class GenCythonAstImpl {
                             node = createAugAssign(asObject);
                             break;
 
+                        case "Typecast":
+                            node = createTypecast(asObject);
+                            break;
+
                         case "Add":
                         case "Sub":
                         case "Mul":
@@ -276,6 +280,27 @@ public class GenCythonAstImpl {
                 }
             }
             return node;
+        }
+
+        private ISimpleNode createTypecast(JsonObject asObject) {
+            Name name = createNameFromBaseType(asObject);
+            if (name != null) {
+                JsonValue jsonValue = asObject.get("operand");
+                if (jsonValue.isObject()) {
+                    ISimpleNode operand = createNode(jsonValue.asObject());
+                    if (operand != null) {
+                        List<exprType> params = new ArrayList<exprType>();
+                        exprType expr = astFactory.asExpr(operand);
+                        if (expr != null) {
+                            params.add(expr);
+                        }
+                        Call call = astFactory.createCall(name, params, new keywordType[0], null, null);
+                        setLine(call, asObject);
+                        return call;
+                    }
+                }
+            }
+            return null;
         }
 
         private org.python.pydev.parser.jython.ast.Tuple createTuple(JsonObject asObject) throws Exception {

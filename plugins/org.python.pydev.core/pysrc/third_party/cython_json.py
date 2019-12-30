@@ -30,8 +30,25 @@ def node_to_dict(node, _recurse_level=0):
         if isinstance(attr, Nodes.Node):
             data[attr_name] = node_to_dict(attr, _recurse_level)
 
-        elif isinstance(attr, list):
-            data[attr_name] = [node_to_dict(x, _recurse_level) for x in attr]
+        elif isinstance(attr, (list, tuple)):
+            lst = []
+
+            for x in attr:
+                if isinstance(x, Nodes.Node):
+                    lst.append(node_to_dict(x, _recurse_level))
+
+                elif isinstance(x, (list, tuple)):
+                    tup = []
+
+                    for y in x:
+                        if isinstance(y, (str, bytes)):
+                            tup.append(y)
+                        elif isinstance(y, Nodes.Node):
+                            tup.append(node_to_dict(y, _recurse_level))
+
+                    lst.append(tup)
+
+            data[attr_name] = lst
 
         else:
             data[attr_name] = str(attr)

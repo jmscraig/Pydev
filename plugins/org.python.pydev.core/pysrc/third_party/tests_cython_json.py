@@ -2,6 +2,7 @@ import Cython
 from cython_json import source_to_dict
 import pytest
 
+
 def test_dump_ast_error():
     as_dict = source_to_dict("x = [a  10]")
     assert as_dict['is_error']
@@ -9,6 +10,21 @@ def test_dump_ast_error():
     assert as_dict['line'] == 1
     assert as_dict['col'] == 8
     assert 'Expected' in as_dict['message_only']
+
+
+def test_dump_error():
+    contents = '''
+from distutils import sysconfig
+'''
+    if isinstance(contents, bytes):
+        contents = contents.decode('utf-8')
+    source_to_dict(contents)
+
+# def test_dump_custom():
+#     with open(r'X:\cython\tests\compile\buildenv.pyx', 'r') as stream:
+#         contents = stream.read().decode('utf-8')
+#     source_to_dict(contents)
+
 
 def test_dump_ast():
     assert source_to_dict("x = [a, 10]") == {
@@ -52,6 +68,7 @@ def test_dump_ast():
             }
         ]
     }
+
 
 if __name__ == '__main__':
     pytest.main()
