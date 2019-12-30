@@ -160,7 +160,7 @@ public class PyAstFactory {
         return new Call(new Name(call, Name.Load, false), array, keywords, starargs, kwargs);
     }
 
-    public Call createCall(Name name, List<exprType> params, keywordType[] keywords, exprType starargs,
+    public Call createCall(exprType name, List<exprType> params, keywordType[] keywords, exprType starargs,
             exprType kwargs) {
         exprType[] array = params != null ? params.toArray(new exprType[0]) : new exprType[0];
         return new Call(name, array, keywords, starargs, kwargs);

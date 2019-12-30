@@ -97,6 +97,16 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
+                "call(b=2, **kwargs)",
+                "call(1, b, a=2, c=3, *args)",
+                "call(1, *args)",
+                "call(*args)",
+                "call(1, a=2)",
+                //                "call(1, a=1, b=2, *args, **kwargs)",
+                "call(1)",
+                "call(**args)",
+                "call(a=10)",
+                "a.b().c.d()",
                 "get_env = os.environ.get",
                 "import os\nimport bar\nimport foo",
                 "from ..b import *",

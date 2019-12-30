@@ -19,6 +19,7 @@ import org.python.pydev.parser.jython.ParseException;
 import org.python.pydev.parser.jython.SimpleNode;
 import org.python.pydev.parser.jython.ast.Assert;
 import org.python.pydev.parser.jython.ast.Assign;
+import org.python.pydev.parser.jython.ast.Attribute;
 import org.python.pydev.parser.jython.ast.AugAssign;
 import org.python.pydev.parser.jython.ast.Await;
 import org.python.pydev.parser.jython.ast.BinOp;
@@ -42,6 +43,7 @@ import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Set;
 import org.python.pydev.parser.jython.ast.Str;
 import org.python.pydev.parser.jython.ast.Suite;
+import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.While;
 import org.python.pydev.parser.jython.ast.Yield;
 import org.python.pydev.parser.jython.ast.aliasType;
@@ -102,6 +104,10 @@ public class GenCythonAstImpl {
                             node = createName(asObject);
                             break;
 
+                        case "Attribute":
+                            node = createAttribute(asObject);
+                            break;
+
                         case "StatList":
                             node = createStatList(asObject);
                             break;
@@ -131,8 +137,20 @@ public class GenCythonAstImpl {
                             node = createTuple(asObject);
                             break;
 
+                        case "AsTuple":
+                            node = createAsTuple(asObject);
+                            break;
+
+                        case "IdentifierString":
+                            node = createIdentifierString(asObject);
+                            break;
+
                         case "Dict":
                             node = createDict(asObject);
+                            break;
+
+                        case "MergedDict":
+                            node = createMergedDict(asObject);
                             break;
 
                         case "List":
@@ -401,6 +419,17 @@ public class GenCythonAstImpl {
             return tup;
         }
 
+        private org.python.pydev.parser.jython.ast.Tuple createAsTuple(JsonObject asObject) throws Exception {
+            boolean endsWithComma = false;
+            List<exprType> extract = extractExprs(asObject, "arg");
+            org.python.pydev.parser.jython.ast.Tuple tup = new org.python.pydev.parser.jython.ast.Tuple(
+                    astFactory.createExprArray(extract.toArray()),
+                    org.python.pydev.parser.jython.ast.Tuple.Load,
+                    endsWithComma);
+            setLine(tup, asObject);
+            return tup;
+        }
+
         private org.python.pydev.parser.jython.ast.List createList(JsonObject asObject) throws Exception {
             List<exprType> extract = extractExprs(asObject, "args");
             org.python.pydev.parser.jython.ast.List tup = new org.python.pydev.parser.jython.ast.List(
@@ -415,6 +444,18 @@ public class GenCythonAstImpl {
             Set tup = new Set(astFactory.createExprArray(extract.toArray()));
             setLine(tup, asObject);
             return tup;
+        }
+
+        private ISimpleNode createMergedDict(JsonObject asObject) throws Exception {
+            List<JsonValue> bodyAsList = getBodyAsList(asObject.get("keyword_args"));
+            MergedDict dct = new MergedDict();
+            for (JsonValue jsonValue : bodyAsList) {
+                ISimpleNode n = createNode(jsonValue);
+                if (n != null) {
+                    dct.nodes.add(n);
+                }
+            }
+            return dct;
         }
 
         private Dict createDict(JsonObject asObject) throws Exception {
@@ -562,27 +603,76 @@ public class GenCythonAstImpl {
         }
 
         private SimpleNode createGeneralCall(final JsonObject asObject) throws Exception {
+            System.out.println(asObject.toPrettyString());
             final JsonValue funcJsonValue = asObject.get("function");
             if (funcJsonValue != null && funcJsonValue.isObject()) {
                 final JsonObject funcAsObject = funcJsonValue.asObject();
                 final Name name = createName(funcAsObject);
                 if (name != null) {
                     final JsonValue jsonValueArgs = asObject.get("positional_args");
+                    final JsonValue jsonKeywordArgs = asObject.get("keyword_args");
+
                     List<exprType> params = new ArrayList<>();
-                    keywordType[] keywords = new keywordType[0];
+                    List<keywordType> keywords = new ArrayList<>();
                     exprType starargs = null;
                     exprType kwargs = null;
 
-                    if (jsonValueArgs != null && jsonValueArgs.isArray()) {
-                        for (JsonValue v : jsonValueArgs.asArray()) {
-                            ISimpleNode n = createNode(v);
-                            if (n != null) {
-                                params.add((exprType) n);
+                    if (jsonValueArgs != null) {
+                        if (jsonValueArgs.isArray()) {
+                            for (JsonValue v : jsonValueArgs.asArray()) {
+                                ISimpleNode n = createNode(v);
+                                if (n != null) {
+                                    params.add((exprType) n);
+                                }
+                            }
+                        } else if (jsonValueArgs.isObject()) {
+                            // Star args
+                            JsonValue node = jsonValueArgs.asObject().get("__node__");
+                            if (node != null && node.isString() && node.asString().equals("AsTuple")) {
+                                starargs = createStarArgsFromAsTuple(jsonValueArgs);
+
+                            } else if (node != null && node.isString() && node.asString().equals("Add")) {
+                                // regular args and star args in an Add (kind of weird...)
+                                JsonValue op1 = jsonValueArgs.asObject().get("operand1");
+                                JsonValue op2 = jsonValueArgs.asObject().get("operand2");
+                                starargs = createStarArgsFromAsTuple(op2);
+                                createParamsFromTuple(op1, params);
+
+                            } else {
+                                // Regular tuple in positional args
+                                createParamsFromTuple(jsonValueArgs, params);
                             }
                         }
                     }
 
-                    Call call = astFactory.createCall(name, params, keywords, starargs, kwargs);
+                    if (jsonKeywordArgs != null && jsonKeywordArgs.isObject()) {
+                        ISimpleNode dictNode = createNode(jsonKeywordArgs);
+                        if (dictNode instanceof Dict) {
+                            Dict dict = (Dict) dictNode;
+                            boolean afterstarargs = starargs == null;
+                            fillKeywordsFromDict(keywords, dict, afterstarargs);
+
+                        } else if (dictNode instanceof MergedDict) {
+                            MergedDict mergedDict = (MergedDict) dictNode;
+                            for (ISimpleNode node : mergedDict.nodes) {
+                                if (node instanceof Name) {
+                                    kwargs = (exprType) node;
+                                } else if (node instanceof Dict) {
+                                    Dict dict = (Dict) node;
+                                    boolean afterstarargs = starargs == null;
+                                    fillKeywordsFromDict(keywords, dict, afterstarargs);
+                                } else {
+                                    log("Don't know how to deal with merged dict in: " + asObject.toPrettyString());
+                                }
+                            }
+
+                        } else if (dictNode instanceof exprType) {
+                            kwargs = (exprType) dictNode;
+                        }
+                    }
+
+                    Call call = astFactory.createCall(name, params, keywords.toArray(new keywordType[0]), starargs,
+                            kwargs);
                     setLine(call, asObject);
                     return call;
                 }
@@ -590,16 +680,52 @@ public class GenCythonAstImpl {
             return null;
         }
 
+        private void fillKeywordsFromDict(List<keywordType> keywords, Dict dict, boolean afterstarargs) {
+            for (int i = 0; i < dict.keys.length; i++) {
+                exprType key = dict.keys[i];
+                if (key instanceof Name) {
+                    Name nameKey = (Name) key;
+                    NameTok nameTok = new NameTok(nameKey.id, NameTok.KeywordName);
+                    nameTok.beginColumn = key.beginColumn;
+                    nameTok.beginLine = key.beginLine;
+                    exprType value = dict.values[i];
+                    keywords.add(new keywordType(nameTok, value, afterstarargs));
+                }
+            }
+        }
+
+        private void createParamsFromTuple(final JsonValue jsonValueArgs, List<exprType> params) {
+            ISimpleNode asTupleNode = createNode(jsonValueArgs);
+            if (asTupleNode instanceof Tuple) {
+                Tuple tuple = (Tuple) asTupleNode;
+                for (exprType e : tuple.elts) {
+                    params.add(e);
+                }
+            }
+        }
+
+        private exprType createStarArgsFromAsTuple(final JsonValue jsonValueArgs) {
+            exprType starargs = null;
+            ISimpleNode asTupleNode = createNode(jsonValueArgs);
+            if (asTupleNode instanceof Tuple) {
+                Tuple tuple = (Tuple) asTupleNode;
+                if (tuple.elts.length > 0) {
+                    starargs = tuple.elts[0];
+                }
+            }
+            return starargs;
+        }
+
         private SimpleNode createSimpleCall(final JsonObject asObject) throws Exception {
             final JsonValue funcJsonValue = asObject.get("function");
             if (funcJsonValue != null && funcJsonValue.isObject()) {
                 final JsonObject funcAsObject = funcJsonValue.asObject();
-                final Name name = createName(funcAsObject);
-                if (name != null) {
-
+                exprType expr = astFactory.asExpr(createNode(funcAsObject));
+                if (expr != null) {
                     final JsonValue jsonValueArgs = asObject.get("args");
+
                     List<exprType> params = new ArrayList<>();
-                    keywordType[] keywords = new keywordType[0];
+                    List<keywordType> keywords = new ArrayList<>();
                     exprType starargs = null;
                     exprType kwargs = null;
 
@@ -612,7 +738,8 @@ public class GenCythonAstImpl {
                         }
                     }
 
-                    Call call = astFactory.createCall(name, params, keywords, starargs, kwargs);
+                    Call call = astFactory.createCall(expr, params, keywords.toArray(new keywordType[0]), starargs,
+                            kwargs);
                     setLine(call, asObject);
                     return call;
                 }
@@ -1327,6 +1454,10 @@ public class GenCythonAstImpl {
             public List<ISimpleNode> nodes = new ArrayList<ISimpleNode>();
         }
 
+        private static class MergedDict implements ISimpleNode {
+            public List<ISimpleNode> nodes = new ArrayList<ISimpleNode>();
+        }
+
         private JsonValue getDeclarator(JsonObject asObject) {
             JsonValue jsonValue = asObject.get("declarator");
             if (jsonValue.isObject()) {
@@ -1520,6 +1651,26 @@ public class GenCythonAstImpl {
             return node;
         }
 
+        private Attribute createAttribute(JsonObject asObject) {
+            JsonValue attribute = asObject.get("attribute");
+            if (attribute.isString()) {
+                String attr = attribute.asString();
+                JsonValue obj = asObject.get("obj");
+                if (obj.isObject()) {
+                    ISimpleNode objNode = createNode(obj.asObject());
+
+                    NameTok attribName = new NameTok(attr, NameTok.Attrib);
+                    setLine(attribName, asObject);
+
+                    Attribute attributeNode = new Attribute(
+                            astFactory.asExpr(objNode), attribName, Attribute.Load);
+                    setLine(attributeNode, asObject);
+                    return attributeNode;
+                }
+            }
+            return null;
+        }
+
         private NodeList createStatList(JsonObject asObject) {
             JsonValue stats = asObject.get("stats");
             if (stats != null && stats.isArray()) {
@@ -1538,6 +1689,17 @@ public class GenCythonAstImpl {
             Name node = null;
             JsonValue value;
             value = asObject.get("name");
+            if (value != null) {
+                node = astFactory.createName(value.asString());
+                setLine(node, asObject);
+            }
+            return node;
+        }
+
+        private Name createIdentifierString(JsonObject asObject) {
+            Name node = null;
+            JsonValue value;
+            value = asObject.get("value");
             if (value != null) {
                 node = astFactory.createName(value.asString());
                 setLine(node, asObject);
@@ -1604,7 +1766,7 @@ public class GenCythonAstImpl {
         } else {
             JsonValue body = asObject.get("stats");
             if (body != null && body.isArray()) {
-                //                System.out.println(body.toPrettyString());
+                //System.out.println(body.toPrettyString());
                 JsonToNodesBuilder builder = new JsonToNodesBuilder(p);
                 JsonArray asArray = body.asArray();
                 Iterator<JsonValue> iterator = asArray.iterator();
