@@ -79,7 +79,9 @@ public class CtxVisitor extends Visitor {
     public Object visitName(Name node) throws Exception {
         if ((ctx == expr_contextType.Store || ctx == expr_contextType.NamedStore) && node.reserved) {
             String msg = StringUtils.format("Cannot assign value to %s (because it's a keyword)", node.id);
-            this.stack.getGrammar().addAndReport(new ParseException(msg, node), msg);
+            if (this.stack != null) {
+                this.stack.getGrammar().addAndReport(new ParseException(msg, node), msg);
+            }
         } else {
             node.ctx = ctx;
         }
@@ -109,7 +111,9 @@ public class CtxVisitor extends Visitor {
     public Object visitList(List node) throws Exception {
         if (ctx == expr_contextType.AugStore) {
             String msg = "Augmented assign to list not possible";
-            this.stack.getGrammar().addAndReport(new ParseException(msg, node), msg);
+            if (this.stack != null) {
+                this.stack.getGrammar().addAndReport(new ParseException(msg, node), msg);
+            }
         } else {
             node.ctx = ctx;
         }
@@ -121,7 +125,9 @@ public class CtxVisitor extends Visitor {
     public Object visitTuple(Tuple node) throws Exception {
         if (ctx == expr_contextType.AugStore) {
             String msg = "Augmented assign to tuple not possible";
-            this.stack.getGrammar().addAndReport(new ParseException(msg, node), msg);
+            if (this.stack != null) {
+                this.stack.getGrammar().addAndReport(new ParseException(msg, node), msg);
+            }
         } else {
             node.ctx = ctx;
         }
