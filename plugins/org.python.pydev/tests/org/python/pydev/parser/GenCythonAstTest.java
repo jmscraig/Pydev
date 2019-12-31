@@ -97,6 +97,10 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
+                "with foo:\n  pass",
+                "with nogil:\n  pass",
+                "with foo as bar:\n  pass",
+                "with foo:\n  pass",
                 "b[1:2:3]",
                 "b[1] = 10",
                 "b[1]",
@@ -324,6 +328,12 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     public void testGenCythonAstCornerCase7() throws Exception {
         compareWithAst("print(10)",
                 "Module[body=[Print[dest=null, values=[Num[n=10, type=Int, num=10]], nl=true]]]");
+
+    }
+
+    public void testGenCythonAstCornerCase8() throws Exception {
+        compareWithAst("with foo as bar, x as y:\n  pass",
+                "Module[body=[With[with_item=[WithItem[context_expr=Name[id=foo, ctx=Load, reserved=false], optional_vars=Name[id=bar, ctx=Store, reserved=false]]], body=Suite[body=[With[with_item=[WithItem[context_expr=Name[id=x, ctx=Load, reserved=false], optional_vars=Name[id=y, ctx=Store, reserved=false]]], body=Suite[body=[Pass[]]], async=false]]], async=false]]]");
 
     }
 

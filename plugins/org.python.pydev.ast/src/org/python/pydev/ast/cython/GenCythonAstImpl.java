@@ -56,6 +56,9 @@ import org.python.pydev.parser.jython.ast.Subscript;
 import org.python.pydev.parser.jython.ast.Suite;
 import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.While;
+import org.python.pydev.parser.jython.ast.With;
+import org.python.pydev.parser.jython.ast.WithItem;
+import org.python.pydev.parser.jython.ast.WithItemType;
 import org.python.pydev.parser.jython.ast.Yield;
 import org.python.pydev.parser.jython.ast.aliasType;
 import org.python.pydev.parser.jython.ast.argumentsType;
@@ -276,6 +279,10 @@ public class GenCythonAstImpl {
                             node = createWhile(asObject);
                             break;
 
+                        case "WithStat":
+                            node = createWith(asObject);
+                            break;
+
                         case "AssertStat":
                             node = createAssert(asObject);
                             break;
@@ -368,6 +375,10 @@ public class GenCythonAstImpl {
 
                         case "Slice":
                             node = createSlice(asObject);
+                            break;
+
+                        case "GILStat":
+                            node = createGILStat(asObject);
                             break;
 
                         default:
@@ -1825,6 +1836,45 @@ public class GenCythonAstImpl {
                 }
             }
             return nodeList;
+        }
+
+        private With createGILStat(JsonObject asObject) {
+            Name nogil = astFactory.createName("nogil");
+            setLine(nogil, asObject);
+
+            stmtType[] body = extractStmts(asObject, "body").toArray(new stmtType[0]);
+            suiteType bodySuite = new Suite(body);
+            setLine(bodySuite, asObject);
+
+            WithItemType[] withItem = new WithItem[] { new WithItem(nogil, null) };
+            setLine(withItem[0], asObject);
+
+            boolean async = false;
+            With node = new With(withItem, bodySuite, async);
+            setLine(node, asObject);
+            return node;
+        }
+
+        private With createWith(JsonObject asObject) {
+            exprType test = astFactory.asExpr(createNode(asObject.get("manager")));
+            exprType target = astFactory.asExpr(createNode(asObject.get("target")));
+
+            try {
+                ctx.setStore(target);
+            } catch (Exception e) {
+            }
+            stmtType[] body = extractStmts(asObject, "body").toArray(new stmtType[0]);
+
+            suiteType bodySuite = new Suite(body);
+            setLine(bodySuite, asObject);
+
+            WithItemType[] withItem = new WithItem[] { new WithItem(test, target) };
+            setLine(withItem[0], asObject);
+
+            boolean async = false;
+            With node = new With(withItem, bodySuite, async);
+            setLine(node, asObject);
+            return node;
         }
 
         private While createWhile(JsonObject asObject) {
