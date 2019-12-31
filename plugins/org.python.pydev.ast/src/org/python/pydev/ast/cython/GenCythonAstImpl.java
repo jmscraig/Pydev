@@ -24,10 +24,12 @@ import org.python.pydev.parser.jython.ast.AugAssign;
 import org.python.pydev.parser.jython.ast.Await;
 import org.python.pydev.parser.jython.ast.BinOp;
 import org.python.pydev.parser.jython.ast.BoolOp;
+import org.python.pydev.parser.jython.ast.Break;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Compare;
 import org.python.pydev.parser.jython.ast.Comprehension;
+import org.python.pydev.parser.jython.ast.Continue;
 import org.python.pydev.parser.jython.ast.Dict;
 import org.python.pydev.parser.jython.ast.Expr;
 import org.python.pydev.parser.jython.ast.For;
@@ -105,6 +107,10 @@ public class GenCythonAstImpl {
                             node = createInt(asObject);
                             break;
 
+                        case "Float":
+                            node = createFloat(asObject);
+                            break;
+
                         case "Name":
                             node = createName(asObject);
                             break;
@@ -148,6 +154,10 @@ public class GenCythonAstImpl {
 
                         case "IdentifierString":
                             node = createIdentifierString(asObject);
+                            break;
+
+                        case "Ampersand":
+                            node = createAmpersand(asObject);
                             break;
 
                         case "Dict":
@@ -208,6 +218,10 @@ public class GenCythonAstImpl {
 
                         case "SingleAssignment":
                             node = createSingleAssignment(asObject);
+                            break;
+
+                        case "ForFromStat":
+                            node = createForFromStat(asObject);
                             break;
 
                         case "ForInStat":
@@ -313,6 +327,14 @@ public class GenCythonAstImpl {
                             node = createBinOp(asObject);
                             break;
 
+                        case "ContinueStat":
+                            node = createContinue(asObject);
+                            break;
+
+                        case "BreakStat":
+                            node = createBreak(asObject);
+                            break;
+
                         default:
                             String msg = "Don't know how to create statement from cython json: "
                                     + asObject.toPrettyString();
@@ -325,6 +347,18 @@ public class GenCythonAstImpl {
                 }
             }
             return node;
+        }
+
+        private Continue createContinue(JsonObject asObject) {
+            Continue c = new Continue();
+            setLine(c, asObject);
+            return c;
+        }
+
+        private Break createBreak(JsonObject asObject) {
+            Break b = new Break();
+            setLine(b, asObject);
+            return b;
         }
 
         private ISimpleNode createFromImport(JsonObject asObject) {
@@ -1271,9 +1305,8 @@ public class GenCythonAstImpl {
                     JsonObject asObject = decJsonValue.asObject();
                     ISimpleNode func = createNode(asObject);
                     decoratorsType decorator = astFactory.createEmptyDecoratorsType();
-                    if (func instanceof Name) {
-                        decorator.func = (Name) func;
-                    } else if (func instanceof Call) {
+
+                    if (func instanceof Call) {
                         Call call = (Call) func;
                         decorator.func = call.func;
                         decorator.args = call.args;
@@ -1281,6 +1314,10 @@ public class GenCythonAstImpl {
                         decorator.starargs = call.starargs;
                         decorator.kwargs = call.kwargs;
                         decorator.isCall = true;
+
+                    } else if (func instanceof exprType) {
+                        decorator.func = (exprType) func;
+
                     } else {
                         if (func != null) {
                             log("Don't know how to create decorator from: " + func);
@@ -1416,6 +1453,32 @@ public class GenCythonAstImpl {
                 }
             }
             return lst;
+        }
+
+        private SimpleNode createForFromStat(JsonObject asObject) throws Exception {
+            exprType target = null;
+            exprType iter = null;
+            stmtType[] body = null;
+            suiteType orelse = null;
+
+            JsonValue jsonTarget = asObject.get("target");
+            if (jsonTarget != null) {
+                target = astFactory.asExpr(createNode(jsonTarget));
+                ctx.setStore(target);
+            }
+
+            // Note: we don't provide an iterator for it.
+
+            JsonValue jsonElse = asObject.get("else_clause");
+            if (jsonElse != null && jsonElse.isObject()) {
+                orelse = createSuite(jsonElse.asObject());
+            }
+
+            body = extractStmts(asObject, "body").toArray(new stmtType[0]);
+
+            For node = new For(target, iter, body, orelse, false);
+            setLine(node, asObject);
+            return node;
         }
 
         private SimpleNode createFor(JsonObject asObject) throws Exception {
@@ -1760,6 +1823,16 @@ public class GenCythonAstImpl {
             return node;
         }
 
+        private ISimpleNode createAmpersand(JsonObject asObject) {
+            Name node = null;
+            JsonValue value;
+            value = asObject.get("operand");
+            if (value != null && value.isObject()) {
+                return createNode(value.asObject());
+            }
+            return node;
+        }
+
         private Yield createYieldExpr(JsonObject asObject) throws Exception {
             Yield node = null;
             JsonValue value = asObject.get("arg");
@@ -1774,6 +1847,16 @@ public class GenCythonAstImpl {
             JsonValue value = asObject.get("value");
             if (value != null) {
                 Num node = new Num(new java.math.BigInteger(value.asString()), Num.Int, value.asString());
+                setLine(node, asObject);
+                return node;
+            }
+            return null;
+        }
+
+        private SimpleNode createFloat(JsonObject asObject) {
+            JsonValue value = asObject.get("value");
+            if (value != null) {
+                Num node = new Num(Float.valueOf(value.asString()), Num.Float, value.asString());
                 setLine(node, asObject);
                 return node;
             }

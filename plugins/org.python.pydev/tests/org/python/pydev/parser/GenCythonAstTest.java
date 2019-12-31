@@ -97,7 +97,9 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
-                //                "@dec\nclass A((set, object)):pass",
+                "for i in range(10): break",
+                "for i in range(10): continue",
+                "3.14159",
                 "{tuple(call(n) for n in (1, 2) if n == 2)}",
                 "{tuple(call(n) for n in (1, 2))}",
                 "b = a**2",
@@ -245,10 +247,14 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
         compareCase(s);
     }
 
-    public void testGenCythonAstCornerCase1() throws Exception {
-        ParserInfo parserInfo = new ParserInfo(new Document("(f'{a}{{}}nth')"), grammarVersionProvider);
+    public void compareWithAst(String code, String expectedAst) throws MisconfigurationException {
+        ParserInfo parserInfo = new ParserInfo(new Document(code), grammarVersionProvider);
         ParseOutput cythonParseOutput = new GenCythonAstImpl(parserInfo).genCythonAst();
-        assertEquals(cythonParseOutput.ast.toString(),
+        assertEquals(cythonParseOutput.ast.toString(), expectedAst);
+    }
+
+    public void testGenCythonAstCornerCase1() throws Exception {
+        compareWithAst("(f'{a}{{}}nth')",
                 "Module[body=[Expr[value=Str[s=, type=SingleSingle, unicode=true, raw=false, binary=false, fstring=false, fstring_nodes=[Expr[value=Name[id=a, ctx=Load, reserved=false]], Expr[value=Str[s={}nth, type=SingleSingle, unicode=true, raw=false, binary=false, fstring=false, fstring_nodes=null]]]]]]]");
     }
 
@@ -277,6 +283,8 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
         compareCase("spam_counter = None", "cdef extern int spam_counter");
         compareCase("def foo(a): pass", "cdef int **foo(int* a): pass");
 
+        compareCase("do(g)", "do(&g)");
+
         compareCase("('ab')", "(r'ab',)"); // there's no indication that it's a raw string...
         compareCase("'ab'", "('a' 'b')"); // "call('a' 'b')", // cython converts to 'ab' internally during parsing.
     }
@@ -289,6 +297,18 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
                 + "    a=2\n" // cython starts suite here
                 + "    a=4";
         compareCase(s);
+    }
+
+    public void testGenCythonAstCornerCase4() throws Exception {
+        compareWithAst("@my.dec\nclass A:pass",
+                "Module[body=[ClassDef[name=NameTok[id=A, ctx=ClassName], bases=[], body=[Pass[]], decs=[decorators[func=Attribute[value=Name[id=my, ctx=Load, reserved=false], attr=NameTok[id=dec, ctx=Attrib], ctx=Load], args=[], keywords=[], starargs=null, kwargs=null, isCall=false]], keywords=[], starargs=null, kwargs=null]]]");
+
+    }
+
+    public void testGenCythonAstCornerCase6() throws Exception {
+        compareWithAst("for i from 0 <= i < 10: pass",
+                "Module[body=[For[target=Name[id=i, ctx=Store, reserved=false], iter=null, body=[Pass[]], orelse=null, async=false]]]");
+
     }
 
     public void testGenCythonAstCdef() throws Exception {
