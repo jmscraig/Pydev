@@ -97,6 +97,13 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
+                "a = -b",
+                "a = ~b",
+                "a = +b",
+                "a = not b",
+                "try:\n  pass\nfinally:\n  pass",
+                "b = ...",
+                "del a",
                 "with foo:\n  pass",
                 "with nogil:\n  pass",
                 "with foo as bar:\n  pass",
@@ -144,6 +151,7 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
                 "a = a * b",
                 "a = a / b",
                 "a = a @ b",
+                "a = a % b",
                 "a |= b",
                 "a ^= b",
                 "a &= b",
@@ -152,6 +160,7 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
                 "a *= b",
                 "a /= b",
                 "a @= b",
+                "a %= b",
                 "while True:\n  a=10\n  b=20",
                 "while True:\n  pass\nelse:\n  a=10\n  b=20",
                 "1 if a else b",
@@ -268,9 +277,11 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     }
 
     public void testGenCythonAstCornerCase2() throws Exception {
-        // We don't resolve cimports, so, don't create imports (which would be unresolved).
+        compareCase("b = None", "cimport b");
+
         compareCase("def const_args(a): pass", "cdef const_args(const int a): pass");
 
+        // We don't resolve cimports, so, don't create imports (which would be unresolved).
         compareCase("b = None", "from mod1 cimport b");
 
         compareCase("intptr_t(ptr)", "<intptr_t>ptr");
@@ -334,6 +345,21 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     public void testGenCythonAstCornerCase8() throws Exception {
         compareWithAst("with foo as bar, x as y:\n  pass",
                 "Module[body=[With[with_item=[WithItem[context_expr=Name[id=foo, ctx=Load, reserved=false], optional_vars=Name[id=bar, ctx=Store, reserved=false]]], body=Suite[body=[With[with_item=[WithItem[context_expr=Name[id=x, ctx=Load, reserved=false], optional_vars=Name[id=y, ctx=Store, reserved=false]]], body=Suite[body=[Pass[]]], async=false]]], async=false]]]");
+
+    }
+
+    public void testGenCythonAstCornerCase9() throws Exception {
+        compareWithAst("cdef TemplateTest1[int]* bbbbb = new TemplateTest1[int]()",
+                "Module[body=[Assign[targets=[Name[id=bbbbb, ctx=Store, reserved=false]], value=Call[func=Name[id=TemplateTest1, ctx=Load, reserved=false], args=[], keywords=[], starargs=null, kwargs=null], type=null]]]");
+
+    }
+
+    public void testGenCythonAstCornerCase10() throws Exception {
+        compareWithAst(""
+                + "def f():\n" +
+                "    cdef char **a_2d_char_ptr_ptr_array[10][20]\n" +
+                "",
+                "Module[body=[FunctionDef[name=NameTok[id=f, ctx=FunctionName], args=arguments[args=[], vararg=null, kwarg=null, defaults=[], kwonlyargs=[], kw_defaults=[], annotation=[], varargannotation=null, kwargannotation=null, kwonlyargannotation=[]], body=[], decs=null, returns=null, async=false]]]");
 
     }
 

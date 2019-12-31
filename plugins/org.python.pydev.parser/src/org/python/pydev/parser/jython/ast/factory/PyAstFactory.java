@@ -19,6 +19,8 @@ import org.python.pydev.parser.jython.ast.NameTokType;
 import org.python.pydev.parser.jython.ast.Pass;
 import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Str;
+import org.python.pydev.parser.jython.ast.Suite;
+import org.python.pydev.parser.jython.ast.TryFinally;
 import org.python.pydev.parser.jython.ast.VisitorBase;
 import org.python.pydev.parser.jython.ast.argumentsType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
@@ -190,6 +192,14 @@ public class PyAstFactory {
 
     public void setBody(FunctionDef functionDef, Object... body) {
         functionDef.body = createStmtArray(body);
+    }
+
+    public void setBody(TryFinally tryFinally, Object... body) {
+        tryFinally.body = createStmtArray(body);
+    }
+
+    public void setFinally(TryFinally tryFinally, Object... body) {
+        tryFinally.finalbody = new Suite(createStmtArray(body));
     }
 
     public void setBody(If ifNode, Object... body) {

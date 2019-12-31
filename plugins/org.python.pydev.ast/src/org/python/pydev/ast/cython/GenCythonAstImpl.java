@@ -30,6 +30,7 @@ import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Compare;
 import org.python.pydev.parser.jython.ast.Comprehension;
 import org.python.pydev.parser.jython.ast.Continue;
+import org.python.pydev.parser.jython.ast.Delete;
 import org.python.pydev.parser.jython.ast.Dict;
 import org.python.pydev.parser.jython.ast.Expr;
 import org.python.pydev.parser.jython.ast.For;
@@ -54,7 +55,9 @@ import org.python.pydev.parser.jython.ast.Slice;
 import org.python.pydev.parser.jython.ast.Str;
 import org.python.pydev.parser.jython.ast.Subscript;
 import org.python.pydev.parser.jython.ast.Suite;
+import org.python.pydev.parser.jython.ast.TryFinally;
 import org.python.pydev.parser.jython.ast.Tuple;
+import org.python.pydev.parser.jython.ast.UnaryOp;
 import org.python.pydev.parser.jython.ast.While;
 import org.python.pydev.parser.jython.ast.With;
 import org.python.pydev.parser.jython.ast.WithItem;
@@ -342,7 +345,18 @@ public class GenCythonAstImpl {
                         case "MatMult":
                         case "IntBinop":
                         case "Pow":
+                        case "Mod":
                             node = createBinOp(asObject);
+                            break;
+
+                        case "Tilde":
+                        case "UnaryMinus":
+                        case "UnaryPlus":
+                            node = createUnaryOp(asObject);
+                            break;
+
+                        case "Not":
+                            node = createUnaryOp(asObject, "not");
                             break;
 
                         case "ContinueStat":
@@ -355,6 +369,10 @@ public class GenCythonAstImpl {
 
                         case "FromCImportStat":
                             node = createFromCImportStat(asObject);
+                            break;
+
+                        case "CImportStat":
+                            node = createCImportStat(asObject);
                             break;
 
                         case "PrintStat":
@@ -381,6 +399,26 @@ public class GenCythonAstImpl {
                             node = createGILStat(asObject);
                             break;
 
+                        case "NewExpr":
+                            node = createNewExpr(asObject);
+                            break;
+
+                        case "TemplatedType":
+                            node = createTemplatedType(asObject);
+                            break;
+
+                        case "DelStat":
+                            node = createDel(asObject);
+                            break;
+
+                        case "Ellipsis":
+                            node = createEllipsis(asObject);
+                            break;
+
+                        case "TryFinallyStat":
+                            node = createTryFinally(asObject);
+                            break;
+
                         default:
                             String msg = "Don't know how to create statement from cython json: "
                                     + asObject.toPrettyString();
@@ -393,6 +431,59 @@ public class GenCythonAstImpl {
                 }
             }
             return node;
+        }
+
+        private ISimpleNode createTryFinally(JsonObject asObject) {
+            TryFinally tryFinally = new TryFinally(null, null);
+
+            astFactory.setBody(tryFinally, extractStmts(asObject, "body").toArray());
+            astFactory.setFinally(tryFinally, extractStmts(asObject, "finally_clause").toArray());
+            setLine(tryFinally, asObject);
+
+            return tryFinally;
+        }
+
+        private ISimpleNode createEllipsis(JsonObject asObject) {
+            Name name = new Name("...", Name.Load, true);
+            setLine(name, asObject);
+            return name;
+        }
+
+        private ISimpleNode createDel(JsonObject asObject) {
+            List<exprType> targets = new ArrayList<exprType>();
+            JsonValue args = asObject.get("args");
+            if (args != null) {
+                if (args.isArray()) {
+                    JsonArray arr = args.asArray();
+                    for (JsonValue v : arr) {
+                        ISimpleNode n = createNode(v);
+                        if (n != null) {
+                            targets.add(astFactory.asExpr(n));
+                        }
+                    }
+                }
+            }
+            Delete delete = new Delete(targets.toArray(new exprType[0]));
+            try {
+                ctx.setDelete(delete.targets);
+            } catch (Exception e) {
+            }
+            setLine(delete, asObject);
+            return delete;
+        }
+
+        private ISimpleNode createTemplatedType(JsonObject asObject) {
+            Name name = createNameFromBaseType(asObject);
+            return name;
+        }
+
+        private ISimpleNode createNewExpr(JsonObject asObject) {
+            JsonValue jsonValue = asObject.get("cppclass");
+            if (jsonValue != null && jsonValue.isObject()) {
+                ISimpleNode node = createNode(jsonValue);
+                return node;
+            }
+            return null;
         }
 
         private Slice createSlice(JsonObject asObject) {
@@ -575,6 +666,24 @@ public class GenCythonAstImpl {
             }
 
             return nodeList;
+        }
+
+        private ISimpleNode createCImportStat(JsonObject asObject) {
+            // We don't follow cimports, so, just create an assign to None.
+            JsonValue jsonValue = asObject.get("module_name");
+            JsonValue asName = asObject.get("as_name");
+            if (asName != null && asName.isString() && !asName.asString().equals("None")) {
+                jsonValue = asName;
+            }
+
+            if (jsonValue != null && jsonValue.isString()) {
+                Name name = new Name(jsonValue.asString(), Name.Store, false);
+                setLine(name, asObject);
+                Assign assign = astFactory.createAssign(name, createNone(asObject));
+                setLine(assign, asObject);
+                return assign;
+            }
+            return null;
         }
 
         private ISimpleNode createImport(JsonObject asObject) {
@@ -1029,6 +1138,9 @@ public class GenCythonAstImpl {
                     case "^":
                         op = AugAssign.BitXor;
                         break;
+                    case "%":
+                        op = AugAssign.Mod;
+                        break;
 
                 }
                 exprType leftAsExpr = astFactory.asExpr(left);
@@ -1040,6 +1152,33 @@ public class GenCythonAstImpl {
                 node = new AugAssign(leftAsExpr, op, astFactory.asExpr(right));
                 setLine(node, asObject);
             }
+            return node;
+        }
+
+        public ISimpleNode createUnaryOp(JsonObject asObject) {
+            JsonValue operator = asObject.get("operator");
+            return createUnaryOp(asObject, operator.asString());
+        }
+
+        public ISimpleNode createUnaryOp(JsonObject asObject, String operator) {
+            JsonValue operand = asObject.get("operand");
+            int op = 0;
+            switch (operator) {
+                case "~":
+                    op = UnaryOp.Invert;
+                    break;
+                case "-":
+                    op = UnaryOp.USub;
+                    break;
+                case "+":
+                    op = UnaryOp.UAdd;
+                    break;
+                case "not":
+                    op = UnaryOp.Not;
+                    break;
+            }
+            UnaryOp node = new UnaryOp(op, astFactory.asExpr(createNode(operand)));
+            setLine(node, asObject);
             return node;
         }
 
@@ -1080,6 +1219,9 @@ public class GenCythonAstImpl {
                         break;
                     case "**":
                         op = BinOp.Pow;
+                        break;
+                    case "%":
+                        op = BinOp.Mod;
                         break;
                     default:
                         break;
@@ -1607,6 +1749,12 @@ public class GenCythonAstImpl {
                         nameNode = createName(baseTypeNode.asObject());
                     }
                 }
+            } else {
+                JsonValue baseTypeNode = asObject.get("base_type_node");
+                if (baseTypeNode != null && baseTypeNode.isObject()) {
+                    nameNode = createName(baseTypeNode.asObject());
+                }
+
             }
             return nameNode;
         }
@@ -1828,7 +1976,8 @@ public class GenCythonAstImpl {
                                 setLine(node, declaratorAsObject);
                                 nodeList.nodes.add(node);
                             } else {
-                                log("Could not create name from: " + d.toPrettyString());
+                                return null;
+                                // log("Could not create name from: " + d.toPrettyString());
                             }
                         }
 
