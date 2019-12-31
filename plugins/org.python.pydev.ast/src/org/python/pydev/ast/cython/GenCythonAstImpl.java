@@ -39,6 +39,7 @@ import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.IfExp;
 import org.python.pydev.parser.jython.ast.Import;
 import org.python.pydev.parser.jython.ast.ImportFrom;
+import org.python.pydev.parser.jython.ast.Index;
 import org.python.pydev.parser.jython.ast.ListComp;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
@@ -49,7 +50,9 @@ import org.python.pydev.parser.jython.ast.Pass;
 import org.python.pydev.parser.jython.ast.Print;
 import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Set;
+import org.python.pydev.parser.jython.ast.Slice;
 import org.python.pydev.parser.jython.ast.Str;
+import org.python.pydev.parser.jython.ast.Subscript;
 import org.python.pydev.parser.jython.ast.Suite;
 import org.python.pydev.parser.jython.ast.Tuple;
 import org.python.pydev.parser.jython.ast.While;
@@ -61,6 +64,7 @@ import org.python.pydev.parser.jython.ast.comprehensionType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
+import org.python.pydev.parser.jython.ast.sliceType;
 import org.python.pydev.parser.jython.ast.stmtType;
 import org.python.pydev.parser.jython.ast.suiteType;
 import org.python.pydev.parser.jython.ast.factory.AdapterPrefs;
@@ -354,6 +358,14 @@ public class GenCythonAstImpl {
                             node = createGlobal(asObject, NameTok.NonLocalName, new NonLocal(null, null));
                             break;
 
+                        case "Index":
+                            node = createIndex(asObject);
+                            break;
+
+                        case "Slice":
+                            node = createSlice(asObject);
+                            break;
+
                         default:
                             String msg = "Don't know how to create statement from cython json: "
                                     + asObject.toPrettyString();
@@ -366,6 +378,53 @@ public class GenCythonAstImpl {
                 }
             }
             return node;
+        }
+
+        private Slice createSlice(JsonObject asObject) {
+            JsonValue start = asObject.get("start");
+            JsonValue stop = asObject.get("stop");
+            JsonValue step = asObject.get("step");
+
+            exprType startNode = null;
+            exprType stopNode = null;
+            exprType stepNode = null;
+
+            if (start != null && start.isObject()) {
+                startNode = astFactory.asExpr(createNode(start));
+            }
+            if (stop != null && stop.isObject()) {
+                stopNode = astFactory.asExpr(createNode(stop));
+            }
+            if (step != null && step.isObject()) {
+                stepNode = astFactory.asExpr(createNode(step));
+            }
+
+            Slice slice = new Slice(startNode, stopNode, stepNode);
+            setLine(slice, asObject);
+            return slice;
+        }
+
+        private ISimpleNode createIndex(JsonObject asObject) {
+            JsonValue base = asObject.get("base");
+            if (base != null && base.isObject()) {
+                ISimpleNode subscript = createNode(base);
+                JsonValue index = asObject.get("index");
+                if (index != null && index.isObject()) {
+                    ISimpleNode slice = createNode(index);
+                    if (slice != null) {
+                        if (!(slice instanceof sliceType)) {
+                            Index idx = new Index(astFactory.asExpr(slice));
+                            setLine(idx, index.asObject());
+                            slice = idx;
+                        }
+                        Subscript s = new Subscript(astFactory.asExpr(subscript), (sliceType) slice,
+                                Subscript.Load);
+                        setLine(s, asObject);
+                        return s;
+                    }
+                }
+            }
+            return null;
         }
 
         private ISimpleNode createGlobal(JsonObject asObject, int flag, SimpleNode node) {
