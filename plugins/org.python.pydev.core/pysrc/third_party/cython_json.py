@@ -37,6 +37,12 @@ def node_to_dict(node, _recurse_level=0):
                 if isinstance(x, Nodes.Node):
                     lst.append(node_to_dict(x, _recurse_level))
 
+                elif isinstance(x, (bytes, str)):
+                    lst.append(x)
+
+                elif hasattr(x, 'encode'):
+                    lst.append(x.encode('utf-8', 'replace'))
+
                 elif isinstance(x, (list, tuple)):
                     tup = []
 

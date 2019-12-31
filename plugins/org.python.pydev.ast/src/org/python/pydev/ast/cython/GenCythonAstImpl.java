@@ -34,6 +34,7 @@ import org.python.pydev.parser.jython.ast.Dict;
 import org.python.pydev.parser.jython.ast.Expr;
 import org.python.pydev.parser.jython.ast.For;
 import org.python.pydev.parser.jython.ast.FunctionDef;
+import org.python.pydev.parser.jython.ast.Global;
 import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.IfExp;
 import org.python.pydev.parser.jython.ast.Import;
@@ -42,8 +43,10 @@ import org.python.pydev.parser.jython.ast.ListComp;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.NameTokType;
+import org.python.pydev.parser.jython.ast.NonLocal;
 import org.python.pydev.parser.jython.ast.Num;
 import org.python.pydev.parser.jython.ast.Pass;
+import org.python.pydev.parser.jython.ast.Print;
 import org.python.pydev.parser.jython.ast.Return;
 import org.python.pydev.parser.jython.ast.Set;
 import org.python.pydev.parser.jython.ast.Str;
@@ -335,6 +338,22 @@ public class GenCythonAstImpl {
                             node = createBreak(asObject);
                             break;
 
+                        case "FromCImportStat":
+                            node = createFromCImportStat(asObject);
+                            break;
+
+                        case "PrintStat":
+                            node = createPrint(asObject);
+                            break;
+
+                        case "Global":
+                            node = createGlobal(asObject, NameTok.GlobalName, new Global(null, null));
+                            break;
+
+                        case "Nonlocal":
+                            node = createGlobal(asObject, NameTok.NonLocalName, new NonLocal(null, null));
+                            break;
+
                         default:
                             String msg = "Don't know how to create statement from cython json: "
                                     + asObject.toPrettyString();
@@ -346,6 +365,32 @@ public class GenCythonAstImpl {
                     log(e);
                 }
             }
+            return node;
+        }
+
+        private ISimpleNode createGlobal(JsonObject asObject, int flag, SimpleNode node) {
+            List<NameTok> lst = new ArrayList<>();
+            JsonValue names = asObject.get("names");
+            if (names != null && names.isArray()) {
+                JsonArray arr = names.asArray();
+                for (JsonValue v : arr) {
+                    if (v.isString()) {
+                        NameTok n = new NameTok(v.asString(), flag);
+                        lst.add(n);
+                        setLine(n, asObject);
+                    }
+                }
+
+                if (node instanceof Global) {
+                    Global global = (Global) node;
+                    global.names = lst.toArray(new NameTokType[0]);
+                } else if (node instanceof NonLocal) {
+                    NonLocal global = (NonLocal) node;
+                    global.names = lst.toArray(new NameTokType[0]);
+
+                }
+            }
+            setLine(node, asObject);
             return node;
         }
 
@@ -408,6 +453,54 @@ public class GenCythonAstImpl {
                 }
             }
             return null;
+        }
+
+        private ISimpleNode createPrint(JsonObject asObject) {
+            JsonValue jsonValue = asObject.get("arg_tuple");
+            ISimpleNode args = createNode(jsonValue);
+            if (args instanceof Tuple) {
+                Tuple tuple = (Tuple) args;
+                JsonValue appendNewLine = asObject.get("append_newline");
+                boolean nl = appendNewLine != null && appendNewLine.isString()
+                        && appendNewLine.asString().equals("True");
+                Print node = new Print(null, tuple.elts, nl);
+                setLine(node, asObject);
+                return node;
+            }
+            return null;
+        }
+
+        private ISimpleNode createFromCImportStat(JsonObject asObject) {
+            // We don't follow cimports, so, just create an assign to None.
+            JsonValue jsonValue = asObject.get("imported_names");
+            NodeList nodeList = new NodeList();
+            if (jsonValue != null && jsonValue.isArray()) {
+                JsonArray asArray = jsonValue.asArray();
+                for (JsonValue v : asArray) {
+                    if (v.isString()) {
+                        String s = v.asString();
+                        Name name = new Name(s, Name.Store, false);
+                        setLine(name, asObject);
+                        Assign assign = astFactory.createAssign(name, createNone(asObject));
+                        setLine(assign, asObject);
+                        nodeList.nodes.add(assign);
+
+                    } else if (v.isArray()) {
+                        for (JsonValue x : v.asArray()) {
+                            if (x.isString()) {
+                                String s = x.asString();
+                                Name name = new Name(s, Name.Store, false);
+                                setLine(name, asObject);
+                                Assign assign = astFactory.createAssign(name, createNone(asObject));
+                                setLine(assign, asObject);
+                                nodeList.nodes.add(assign);
+                            }
+                        }
+                    }
+                }
+            }
+
+            return nodeList;
         }
 
         private ISimpleNode createImport(JsonObject asObject) {
@@ -1729,7 +1822,7 @@ public class GenCythonAstImpl {
             return ifNode;
         }
 
-        private SimpleNode createNone(JsonObject asObject) {
+        private Name createNone(JsonObject asObject) {
             Name node = astFactory.createNone();
             setLine(node, asObject);
             return node;
@@ -1902,7 +1995,7 @@ public class GenCythonAstImpl {
         } else {
             JsonValue body = asObject.get("stats");
             if (body != null && body.isArray()) {
-                //System.out.println(body.toPrettyString());
+                // System.out.println(body.toPrettyString());
                 JsonToNodesBuilder builder = new JsonToNodesBuilder(p);
                 JsonArray asArray = body.asArray();
                 Iterator<JsonValue> iterator = asArray.iterator();

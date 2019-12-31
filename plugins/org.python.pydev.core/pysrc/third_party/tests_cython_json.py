@@ -1,6 +1,7 @@
 import Cython
 from cython_json import source_to_dict
 import pytest
+import json
 
 
 def test_dump_ast_error():
@@ -15,6 +16,16 @@ def test_dump_ast_error():
 def test_dump_error():
     contents = '''
 from distutils import sysconfig
+'''
+    if isinstance(contents, bytes):
+        contents = contents.decode('utf-8')
+    source_to_dict(contents)
+
+def test_global():
+    contents = '''
+def method():
+  global b
+  b = 10
 '''
     if isinstance(contents, bytes):
         contents = contents.decode('utf-8')

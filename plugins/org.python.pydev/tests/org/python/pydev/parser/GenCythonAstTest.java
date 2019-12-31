@@ -97,6 +97,8 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
+                "def method():\n    global b\n    b=10",
+                "def method():\n    nonlocal b\n    b=10",
                 "for i in range(10): break",
                 "for i in range(10): continue",
                 "3.14159",
@@ -259,6 +261,9 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     }
 
     public void testGenCythonAstCornerCase2() throws Exception {
+        // We don't resolve cimports, so, don't create imports (which would be unresolved).
+        compareCase("b = None", "from mod1 cimport b");
+
         compareCase("intptr_t(ptr)", "<intptr_t>ptr");
 
         compareCase("a = None", "a = NULL");
@@ -308,6 +313,12 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     public void testGenCythonAstCornerCase6() throws Exception {
         compareWithAst("for i from 0 <= i < 10: pass",
                 "Module[body=[For[target=Name[id=i, ctx=Store, reserved=false], iter=null, body=[Pass[]], orelse=null, async=false]]]");
+
+    }
+
+    public void testGenCythonAstCornerCase7() throws Exception {
+        compareWithAst("print(10)",
+                "Module[body=[Print[dest=null, values=[Num[n=10, type=Int, num=10]], nl=true]]]");
 
     }
 
