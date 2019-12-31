@@ -334,6 +334,22 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
     }
 
     public void testGenCythonAstClassCDef() throws Exception {
+        String s = ""
+                + "\n"
+                + "class TemplateTest1:\n"
+                + "    a = None\n"
+                + "    def b(): pass";
+
+        String cython = ""
+                + "cdef extern from \"templates.h\":\n"
+                + "  cdef cppclass TemplateTest1[T]:\n"
+                + "    int a\n"
+                + "    def b(): pass\n"
+                + "";
+        compareCase(s, cython);
+    }
+
+    public void testGenCythonAstClassCDef2() throws Exception {
         String s;
         String cython;
         ISimpleNode cythonAst;

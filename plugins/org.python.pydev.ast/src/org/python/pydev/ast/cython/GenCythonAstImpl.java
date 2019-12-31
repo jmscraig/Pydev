@@ -252,6 +252,10 @@ public class GenCythonAstImpl {
                             node = createCClassDef(asObject);
                             break;
 
+                        case "CppClass":
+                            node = createCppClass(asObject);
+                            break;
+
                         case "PrimaryCmp":
                             node = createCompare(asObject);
                             break;
@@ -1224,6 +1228,10 @@ public class GenCythonAstImpl {
         }
 
         private void setBases(JsonObject asObject, ClassDef classDef) {
+            setBases(asObject, classDef, "bases");
+        }
+
+        private void setBases(JsonObject asObject, ClassDef classDef, String basesName) {
             List<exprType> bases = extractExprs(asObject, "bases");
             if (bases.size() == 1 && bases.get(0) instanceof org.python.pydev.parser.jython.ast.Tuple) {
                 org.python.pydev.parser.jython.ast.Tuple tuple = (org.python.pydev.parser.jython.ast.Tuple) bases
@@ -1328,6 +1336,24 @@ public class GenCythonAstImpl {
                 classDef.name.beginColumn = classDef.beginColumn + 6;
 
                 astFactory.setBody(classDef, extractStmts(asObject, "attributes").toArray());
+                return classDef;
+            }
+            return null;
+        }
+
+        private ClassDef createCppClass(JsonObject asObject) throws Exception {
+            final JsonValue value = asObject.get("name");
+            if (value != null && value.isString()) {
+                ClassDef classDef = astFactory.createClassDef(value.asString());
+                setLine(classDef, asObject);
+                classDef.name.beginLine = classDef.beginLine;
+                classDef.name.beginColumn = classDef.beginColumn + 6; // cdef class X
+
+                setBases(asObject, classDef, "base_classes");
+
+                astFactory.setBody(classDef, extractStmts(asObject, "attributes").toArray());
+
+                classDef.decs = createDecorators(asObject);
                 return classDef;
             }
             return null;
