@@ -27,13 +27,16 @@ import org.python.pydev.parser.jython.ast.BoolOp;
 import org.python.pydev.parser.jython.ast.Call;
 import org.python.pydev.parser.jython.ast.ClassDef;
 import org.python.pydev.parser.jython.ast.Compare;
+import org.python.pydev.parser.jython.ast.Comprehension;
 import org.python.pydev.parser.jython.ast.Dict;
+import org.python.pydev.parser.jython.ast.Expr;
 import org.python.pydev.parser.jython.ast.For;
 import org.python.pydev.parser.jython.ast.FunctionDef;
 import org.python.pydev.parser.jython.ast.If;
 import org.python.pydev.parser.jython.ast.IfExp;
 import org.python.pydev.parser.jython.ast.Import;
 import org.python.pydev.parser.jython.ast.ImportFrom;
+import org.python.pydev.parser.jython.ast.ListComp;
 import org.python.pydev.parser.jython.ast.Name;
 import org.python.pydev.parser.jython.ast.NameTok;
 import org.python.pydev.parser.jython.ast.NameTokType;
@@ -48,6 +51,8 @@ import org.python.pydev.parser.jython.ast.While;
 import org.python.pydev.parser.jython.ast.Yield;
 import org.python.pydev.parser.jython.ast.aliasType;
 import org.python.pydev.parser.jython.ast.argumentsType;
+import org.python.pydev.parser.jython.ast.comp_contextType;
+import org.python.pydev.parser.jython.ast.comprehensionType;
 import org.python.pydev.parser.jython.ast.decoratorsType;
 import org.python.pydev.parser.jython.ast.exprType;
 import org.python.pydev.parser.jython.ast.keywordType;
@@ -185,6 +190,10 @@ public class GenCythonAstImpl {
                             node = createGeneralCall(asObject);
                             break;
 
+                        case "GeneratorExpression":
+                            node = createGeneratorExpression(asObject);
+                            break;
+
                         case "YieldExpr":
                             node = createYieldExpr(asObject);
                             break;
@@ -300,6 +309,7 @@ public class GenCythonAstImpl {
                         case "Div":
                         case "MatMult":
                         case "IntBinop":
+                        case "Pow":
                             node = createBinOp(asObject);
                             break;
 
@@ -602,8 +612,44 @@ public class GenCythonAstImpl {
             return str;
         }
 
+        private SimpleNode createGeneratorExpression(final JsonObject asObject) throws Exception {
+            JsonValue loop = asObject.get("loop");
+            if (loop != null && loop.isObject()) {
+                ISimpleNode loopNode = createNode(loop);
+                if (loopNode instanceof For) {
+                    For for1 = (For) loopNode;
+                    exprType iter = for1.iter;
+                    suiteType orelse = for1.orelse;
+                    exprType target = for1.target;
+                    stmtType[] body = for1.body;
+                    Comprehension generator = new Comprehension(target, iter, new exprType[0]);
+                    exprType exprToUse = null;
+                    if (body.length == 1) {
+                        stmtType stmtType = body[0];
+                        if (stmtType instanceof If) {
+                            If if1 = (If) stmtType;
+                            if (if1.body != null && if1.body.length == 1) {
+                                stmtType = if1.body[0];
+                                generator.ifs = new exprType[] { if1.test };
+                            }
+                        }
+                        if (stmtType instanceof Expr) {
+                            Expr expr = (Expr) stmtType;
+                            exprToUse = expr.value;
+                            if (expr.value instanceof Yield) {
+                                Yield yield = (Yield) expr.value;
+                                exprToUse = yield.value;
+                            }
+                        }
+                    }
+                    return new ListComp(exprToUse, new comprehensionType[] { generator },
+                            comp_contextType.EmptyCtx);
+                }
+            }
+            return null;
+        }
+
         private SimpleNode createGeneralCall(final JsonObject asObject) throws Exception {
-            System.out.println(asObject.toPrettyString());
             final JsonValue funcJsonValue = asObject.get("function");
             if (funcJsonValue != null && funcJsonValue.isObject()) {
                 final JsonObject funcAsObject = funcJsonValue.asObject();
@@ -830,6 +876,9 @@ public class GenCythonAstImpl {
                         break;
                     case "^":
                         op = BinOp.BitXor;
+                        break;
+                    case "**":
+                        op = BinOp.Pow;
                         break;
                     default:
                         break;
@@ -1338,6 +1387,10 @@ public class GenCythonAstImpl {
 
         private ArrayList<JsonValue> getBodyAsList(JsonValue jsonValue) {
             ArrayList<JsonValue> lst = new ArrayList<JsonValue>();
+            if (jsonValue == null) {
+                return lst;
+            }
+
             if (jsonValue.isArray()) {
                 for (JsonValue v : jsonValue.asArray()) {
                     lst.add(v);

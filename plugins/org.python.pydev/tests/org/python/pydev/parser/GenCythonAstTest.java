@@ -97,12 +97,16 @@ public class GenCythonAstTest extends CodeCompletionTestsBase {
 
     public void testGenCythonAstCases() throws Exception {
         String[] cases = new String[] {
+                //                "@dec\nclass A((set, object)):pass",
+                "{tuple(call(n) for n in (1, 2) if n == 2)}",
+                "{tuple(call(n) for n in (1, 2))}",
+                "b = a**2",
                 "call(b=2, **kwargs)",
                 "call(1, b, a=2, c=3, *args)",
                 "call(1, *args)",
                 "call(*args)",
                 "call(1, a=2)",
-                //                "call(1, a=1, b=2, *args, **kwargs)",
+                "call(1, a=1, b=2, *args, **kwargs)",
                 "call(1)",
                 "call(**args)",
                 "call(a=10)",
